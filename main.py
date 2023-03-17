@@ -44,12 +44,12 @@ class PoissonSurfaceReconstructor:
             offset = self.nx * self.ny
 
         # create a diagonal matrix
-        return diags([1/h, -1/h], [offset,0], shape=(num_staggered_grid, nx * ny * nz)).tocoo()
+        return diags([1/h, -1/h], [offset,0], shape=(num_staggered_grid, self.nx * self.ny * self.nz)).tocoo()
 
-    def fd_grad(self):
-        Dx = fd_partial_derivative(nx, ny, nz, hx, "x")
-        Dy = fd_partial_derivative(nx, ny, nz, hy, "y")
-        Dz = fd_partial_derivative(nx, ny, nz, hz, "z")
+    def fd_grad(self, hx, hy, hz):
+        Dx = self.fd_partial_derivative(hx, "x")
+        Dy = self.fd_partial_derivative(hy, "y")
+        Dz = self.fd_partial_derivative(hz, "z")
         return vstack((Dx, Dy, Dz))
 
     def trilinear_interpolation_weights(self, corner, P, hx, hy, hz, direction=None):
@@ -90,11 +90,11 @@ class PoissonSurfaceReconstructor:
         bbox_size = np.max(P, 0) - np.min(P, 0)
 
         hx, hy, hz = bbox_size / np.array([self.nx, self.ny, self.nz])
-        bottom_left_front_corner = np.min(P, 0) - padding * np.array([hx, hy, hz])
+        bottom_left_front_corner = np.min(P, 0) - self.padding * np.array([hx, hy, hz])
 
-        self.nx += 2 * padding
-        self.ny += 2 * padding
-        self.nz += 2 * padding
+        self.nx += 2 * self.padding
+        self.ny += 2 * self.padding
+        self.nz += 2 * self.padding
 
         G = self.fd_grad(hx, hy, hz)
 
@@ -142,9 +142,9 @@ if __name__ == '__main__':
 
     data_dir = os.path.dirname(args.file_path)
     filename = os.path.basename(args.file_path).split(".")[0]
-    save_path = os.path.join(data_dir, f"PSR_nx_{args.x}_ny_{args.y}_nz_{args.z}_"+file_name+".obj")
+    save_path = os.path.join(data_dir, f"PSR_nx_{args.x}_ny_{args.y}_nz_{args.z}_"+filename+".obj")
 
-    pcd = o3d.io.read_point_cloud(args.path)
+    pcd = o3d.io.read_point_cloud(args.file_path)
     # point 
     P = np.asarray(pcd.points)
     # normal
