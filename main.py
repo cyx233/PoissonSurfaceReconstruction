@@ -52,7 +52,7 @@ class PoissonSurfaceReconstructor:
         Dz = fd_partial_derivative(nx, ny, nz, hz, "z")
         return vstack((Dx, Dy, Dz))
 
-    def trilinear_interpolation_weights(self, corner, hx, hy, hz, direction=None):
+    def trilinear_interpolation_weights(self, corner, P, hx, hy, hz, direction=None):
         if direction in ('x', 'y', 'z'):
             corner_shift = np.array([0.5 * hx if direction == 'x' else 0,
                                     0.5 * hy if direction == 'y' else 0,
@@ -96,12 +96,12 @@ class PoissonSurfaceReconstructor:
         self.ny += 2 * padding
         self.nz += 2 * padding
 
-        G = fd_grad(self.nx, self.ny, self.nz, hx, hy, hz)
+        G = self.fd_grad(hx, hy, hz)
 
-        weights_params = (self.nx, self.ny, self.nz, bottom_left_front_corner, P, hx, hy, hz)
-        Wx = trilinear_interpolation_weights(*weights_params, direction="x")
-        Wy = trilinear_interpolation_weights(*weights_params, direction="y")
-        Wz = trilinear_interpolation_weights(*weights_params, direction="z")
+        weights_params = (bottom_left_front_corner, P, hx, hy, hz)
+        Wx = self.trilinear_interpolation_weights(*weights_params, direction="x")
+        Wy = self.trilinear_interpolation_weights(*weights_params, direction="y")
+        Wz = self.trilinear_interpolation_weights(*weights_params, direction="z")
         W = trilinear_interpolation_weights(*weights_params)
 
         vx, vy, vz = Wx.T @ N[:, 0], Wy.T @ N[:, 1], Wz.T @ N[:, 2]
