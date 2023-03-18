@@ -52,45 +52,58 @@ class PoissonSurfaceReconstructor:
         Dz = self.fd_partial_derivative(hz, "z")
         return vstack((Dx, Dy, Dz))
 
-    def trilinear_interpolation_weights(self, corner, P, hx, hy, hz, direction=None):
+    def trilinear_interpolation_weights(self, corner, hx, hy, hz, direction=None):
         if direction in ('x', 'y', 'z'):
             corner_shift = np.array([0.5 * hx if direction == 'x' else 0,
                                     0.5 * hy if direction == 'y' else 0,
                                     0.5 * hz if direction == 'z' else 0])
 
-        corner += corner_shift
+            corner += corner_shift
     
-        relative_coords = (P - corner) / np.array([hx, hy, hz])  # (N, 3)
+        relative_coords = (self.P - corner) / np.array([hx, hy, hz])  # (N, 3)
         lower_indices = np.floor(relative_coords).astype(int)  # (N, 3)
         upper_indices = lower_indices + 1  # (N, 3)
         t = relative_coords - lower_indices  # (N, 3)
 
-        # Compute trilinear interpolation weights
-        weights = np.prod(np.stack([(1 - t), t], axis=-1), axis=-2)  # (N, 2, 2, 2)
 
-        if direction == 'x':
-            num_grids = (self.nx - 1) * self.ny * self.nz
-            staggered_grid_idx = np.arange(num_grids).reshape((self.nx - 1, self.ny, self.nz))
-        elif direction == 'y':
-            num_grids = self.nx * (self.ny - 1) * self.nz
-            staggered_grid_idx = np.arange(num_grids).reshape((self.nx, self.ny - 1, self.nz))
-        elif direction == 'z':
-            num_grids = self.nx * self.ny * (self.nz - 1)
-            staggered_grid_idx = np.arange(num_grids).reshape((self.nx, self.ny, self.nz - 1))
+        if direction == "x":
+            num_grids = (self.nx-1) * self.ny * self.nz
+            staggered_grid_idx = np.arange((self.nx-1) * self.ny * self.nz).reshape((self.nx-1, self.ny, self.nz))
+        elif direction == "y":
+            num_grids = self.nx * (self.ny-1) * self.nz
+            staggered_grid_idx = np.arange(self.nx * (self.ny - 1) * self.nz).reshape((self.nx, self.ny-1, self.nz))
+        elif direction == "z":
+            num_grids = self.nx * self.ny * (self.nz-1)
+            staggered_grid_idx = np.arange(self.nx * self.ny * (self.nz-1)).reshape((self.nx, self.ny, self.nz-1))
         else:
             num_grids = self.nx * self.ny * self.nz
-            staggered_grid_idx = np.arange(num_grids).reshape((self.nx, self.ny, self.nz))
+            staggered_grid_idx = np.arange(self.nx * self.ny * self.nz).reshape((self.nx, self.ny, self.nz))
 
-        indices = np.stack([lower_indices, upper_indices], axis=-1)  # (N, 3, 2)
-        col_idx = staggered_grid_idx[tuple(indices.transpose(1, 0, 2))]  # (3, N, 2, 2, 2)
+        data_terms = []
+        row_indices = []
+        col_indices = []
 
-        return coo_matrix((weights.flatten(), (np.repeat(np.arange(P.shape[0]), 8), col_idx.flatten())), shape=(P.shape[0], num_grids))
+        for dz in [0, 1]:
+            for dy in [0, 1]:
+                for dx in [0, 1]:
+                    weight = np.prod([(1 - t[:, i]) if d == 0 else t[:, i] for i, d in enumerate([dx, dy, dz])], axis=0)
+                    data_terms.append(weight)
+                    row_indices.append(np.arange(self.P.shape[0]))
+                    col_indices.append(staggered_grid_idx[lower_indices[:, 0] + dx, lower_indices[:, 1] + dy, lower_indices[:, 2] + dz])
+
+        data_term = np.concatenate(data_terms)
+        row_idx = np.concatenate(row_indices)
+        col_idx = np.concatenate(col_indices)
+
+        W = coo_matrix((data_term, (row_idx, col_idx)), shape=(self.P.shape[0], num_grids))
+        return W
+
 
     def reconstruct(self, save_path):
-        bbox_size = np.max(P, 0) - np.min(P, 0)
+        bbox_size = np.max(self.P, 0) - np.min(self.P, 0)
 
         hx, hy, hz = bbox_size / np.array([self.nx, self.ny, self.nz])
-        bottom_left_front_corner = np.min(P, 0) - self.padding * np.array([hx, hy, hz])
+        bottom_left_front_corner = np.min(self.P, 0) - self.padding * np.array([hx, hy, hz])
 
         self.nx += 2 * self.padding
         self.ny += 2 * self.padding
@@ -98,13 +111,13 @@ class PoissonSurfaceReconstructor:
 
         G = self.fd_grad(hx, hy, hz)
 
-        weights_params = (bottom_left_front_corner, P, hx, hy, hz)
+        weights_params = (bottom_left_front_corner, hx, hy, hz)
         Wx = self.trilinear_interpolation_weights(*weights_params, direction="x")
         Wy = self.trilinear_interpolation_weights(*weights_params, direction="y")
         Wz = self.trilinear_interpolation_weights(*weights_params, direction="z")
-        W = trilinear_interpolation_weights(*weights_params)
+        W = self.trilinear_interpolation_weights(*weights_params)
 
-        vx, vy, vz = Wx.T @ N[:, 0], Wy.T @ N[:, 1], Wz.T @ N[:, 2]
+        vx, vy, vz = Wx.T @ self.N[:, 0], Wy.T @ self.N[:, 1], Wz.T @ self.N[:, 2]
         v = np.concatenate([vx, vy, vz])
 
         print("Start solving for the characteristic function!")
