@@ -26,25 +26,27 @@ class PoissonSurfaceReconstructor:
         self.padding = padding
 
     def fd_partial_derivative(self, h, direction):
-        primary_grid_idx = np.arange(self.nx * self.ny * self.nz).reshape((self.nx, self.ny, self.nz))
-        if direction == "x":
-            num_staggered_grid = (self.nx - 1) * self.ny * self.nz
-            row_idx = np.arange(num_staggered_grid)
-            col_idx = primary_grid_idx[1:, ...].flatten()
-            offset = self.ny * self.nz
-        elif direction == "y":
-            num_staggered_grid = self.nx * (self.ny - 1) * self.nz
-            row_idx = np.arange(num_staggered_grid)
-            col_idx = primary_grid_idx[:, 1:, :].flatten()
-            offset = self.nx * self.nz
-        elif direction == "z":
-            num_staggered_grid = self.nx * self.ny * (self.nz - 1)
-            row_idx = np.arange(num_staggered_grid)
-            col_idx = primary_grid_idx[:, :, 1:].flatten()
-            offset = self.nx * self.ny
+        nx, ny, nz = self.nx, self.ny, self.nz
+        primary_grid_idx = np.arange(nx * ny * nz).reshape((nx, ny, nz))  # nx changes the fastest; nz changes the slowest.
 
-        # create a diagonal matrix
-        return diags([1/h, -1/h], [offset,0], shape=(num_staggered_grid, self.nx * self.ny * self.nz)).tocoo()
+        if direction == "x":
+            # bottom is positive, top is negative
+            num_staggered_grid = (nx - 1) * ny * nz
+            col_idx = np.concatenate((primary_grid_idx[1:, ...].flatten(), primary_grid_idx[:-1, :, :].flatten()))
+        elif direction == "y":
+            # right is positive, left is negative
+            num_staggered_grid = nx * (ny - 1) * nz
+            col_idx = np.concatenate((primary_grid_idx[:, 1:, :].flatten(), primary_grid_idx[:, :-1, :].flatten()))
+        elif direction == "z":
+            # back is positive, front is negative
+            num_staggered_grid = nx * ny * (nz - 1)
+            col_idx = np.concatenate((primary_grid_idx[:, :, 1:].flatten(), primary_grid_idx[:, :, :-1].flatten()))
+
+        row_idx = np.arange(num_staggered_grid)
+        row_idx = np.tile(row_idx, 2)
+        data_term = [1/h] * num_staggered_grid + [-1/h] * num_staggered_grid
+        D = coo_matrix((data_term, (row_idx, col_idx)), shape=(num_staggered_grid, nx * ny * nz))
+        return D
 
     def fd_grad(self, hx, hy, hz):
         Dx = self.fd_partial_derivative(hx, "x")
