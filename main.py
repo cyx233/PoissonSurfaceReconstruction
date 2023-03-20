@@ -1,15 +1,6 @@
 import numpy as np
-from scipy.sparse import coo_matrix, vstack, diags
-from scipy.sparse.linalg import cg
-import mcubes
-import time
-import open3d as o3d
-import argparse
-import os
-
-import numpy as np
-from scipy.sparse import coo_matrix, vstack
-from scipy.sparse.linalg import cg
+import scipy.sparse as sp
+import scipy.sparse.linalg as la
 import mcubes
 import time
 import open3d as o3d
@@ -26,7 +17,7 @@ class PoissonSurfaceReconstructor:
         self.padding = padding
 
     def fd_partial_derivative(self, h, direction):
-        primary_grid_idx = np.arange(self.nx * self.ny * self.nz).reshape((self.nx, self.ny, self.nz))  # self.nx changes the fastest; nz changes the slowest.
+        primary_grid_idx = np.arange(self.nx * self.ny * self.nz).reshape((self.nx, self.ny, self.nz))
 
         if direction == "x":
             # bottom is positive, top is negative
@@ -44,13 +35,13 @@ class PoissonSurfaceReconstructor:
         row_idx = np.arange(num_staggered_grid)
         row_idx = np.tile(row_idx, 2)
         data_term = [1/h] * num_staggered_grid + [-1/h] * num_staggered_grid
-        return coo_matrix((data_term, (row_idx, col_idx)), shape=(num_staggered_grid, self.nx * self.ny * self.nz))
+        return sp.csr_matrix((data_term, (row_idx, col_idx)), shape=(num_staggered_grid, self.nx * self.ny * self.nz))
 
     def fd_grad(self, hx, hy, hz):
         Dx = self.fd_partial_derivative(hx, "x")
         Dy = self.fd_partial_derivative(hy, "y")
         Dz = self.fd_partial_derivative(hz, "z")
-        return vstack((Dx, Dy, Dz))
+        return sp.vstack((Dx, Dy, Dz))
 
     def trilinear_interpolation_weights(self, corner, hx, hy, hz, direction=None):
         if direction in ('x', 'y', 'z'):
@@ -62,7 +53,6 @@ class PoissonSurfaceReconstructor:
     
         relative_coords = (self.P - corner) / np.array([hx, hy, hz])  # (N, 3)
         lower_indices = np.floor(relative_coords).astype(int)  # (N, 3)
-        upper_indices = lower_indices + 1  # (N, 3)
         t = relative_coords - lower_indices  # (N, 3)
 
 
@@ -95,7 +85,7 @@ class PoissonSurfaceReconstructor:
         row_idx = np.concatenate(row_indices)
         col_idx = np.concatenate(col_indices)
 
-        W = coo_matrix((data_term, (row_idx, col_idx)), shape=(self.P.shape[0], num_grids))
+        W = sp.csr_matrix((data_term, (row_idx, col_idx)), shape=(self.P.shape[0], num_grids))
         return W
 
 
@@ -122,7 +112,7 @@ class PoissonSurfaceReconstructor:
 
         print("Start solving for the characteristic function!")
         tic = time.time()
-        g, _ = cg(G.T @ G, G.T @ v, maxiter=2000, tol=1e-5)
+        g, _ = la.cg(G.T @ G, G.T @ v, maxiter=2000, tol=1e-5)
         toc = time.time()
         print(f"Linear solver finished! {toc-tic:.2f} sec")
 
